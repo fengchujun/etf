@@ -1,17 +1,23 @@
 #encoding=gbk
-import time  
+import time
 import redis
 import json
-import pandas as pd  
+import pandas as pd
 import sys
 from datetime import datetime,time
+import requests
+import threading
 
 
 
 
 print(1)
 
-data2 = {}  # 全局变量  
+# CN26F 价格数据
+latest_prices = {"ask1": 0, "bid1": 0, "timestamp": 0}
+reconnect_needed = False
+
+data2 = {}  # 全局变量
 redis_db=redis.Redis(host='127.0.0.1',port=6379,db=0)
 a=0
 b=0
@@ -35,6 +41,54 @@ redis_db.delete('IH_lock')
 
 jc={"10009641.SHO":0}
 mo_code={}
+
+def fetch_single_price():
+    """获取A50期指实时价格"""
+    url = "https://futsseapi.eastmoney.com/static/104_CN26F_qt"
+    params = {
+        "callbackName": f"jQuery{int(time.time() * 1000)}_{int(time.time() * 1000)}",
+        "field": "mrj,mcj",
+        "token": "1101ffec61617c99be287c1bec3085ff",
+        "_": int(time.time() * 1000)
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://quote.eastmoney.com/globalfuture/CN26F.html"
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=2)
+        if response.status_code == 200:
+            json_str = response.text.split('(', 1)[1].rsplit(')', 1)[0]
+            json_data = json.loads(json_str)
+
+            if json_data.get("qt"):
+                return {
+                    "ask1": json_data["qt"].get("mcj"),
+                    "bid1": json_data["qt"].get("mrj")
+                }
+    except Exception as e:
+        print(f"CN26F API请求错误: {e}")
+    return None
+
+def price_updater():
+    """独立的价格更新线程"""
+    global latest_prices
+
+    while True:
+        start_time = time.time()
+        price_data = fetch_single_price()
+
+        if price_data and price_data["ask1"] is not None and price_data["bid1"] is not None:
+            latest_prices.update({
+                "ask1": price_data["ask1"],
+                "bid1": price_data["bid1"],
+                "timestamp": time.time()
+            })
+
+        elapsed = time.time() - start_time
+        if elapsed < 0.2:
+            time.sleep(0.2 - elapsed)
 
 def find_min_askPrice(dictionary):
     result_index = None
@@ -93,11 +147,34 @@ def calculate_option_time_value(option_type, market_price, strike_price, current
     
 def init(C):
     global today_kong,yestoday_duo,bidPrice_gua,askPrice_gua,data2,redis_db,jc,etf1000_code,a ,strategyName,redis_message1000,type,askPrice_old,bidPrice_old,mo_code,over,ying_max,ying_min,ying2_max,ying2_min
-        
+
+    # 启动 CN26F 价格更新线程
+    price_thread = threading.Thread(target=price_updater, daemon=True)
+    price_thread.start()
+    print("CN26F 价格更新线程已启动")
+
     def call_back(data):
-        #print(data) 
+        #print(data)
         #return
         global today_kong,yestoday_duo,bidPrice_gua,askPrice_gua,data2,redis_db,jc,etf1000_code,a ,strategyName,redis_message1000,type,askPrice_old,bidPrice_old,mo_code,over,ying_max,ying_min,ying2_max,ying2_min
+
+        # 检查 CN26F 数据是否已初始化
+        if latest_prices["timestamp"] == 0:
+            print("等待 CN26F 数据初始化...")
+            return
+
+        # 检查 CN26F 数据是否过期（超过60秒未更新）
+        current_time_unix = time.time()
+        if current_time_unix - latest_prices["timestamp"] > 60:
+            print(f"警告：CN26F数据已过期 ({int(current_time_unix - latest_prices['timestamp'])}秒)")
+            return
+
+        # 填充 CN26F 价格到 data2（价格除以5进行单位转换）
+        data2['10009641.SHO']['askPrice'] = latest_prices["ask1"] / 5
+        data2['10009641.SHO']['bidPrice'] = latest_prices["bid1"] / 5
+        print(f"CN26F价格: 卖一={latest_prices['ask1']}/5={data2['10009641.SHO']['askPrice']}, "
+              f"买一={latest_prices['bid1']}/5={data2['10009641.SHO']['bidPrice']}")
+
         if type=='over': 
             print('over')
             return
@@ -200,7 +277,7 @@ def init(C):
 
             ying_gua=  askPrice_gua - data2['10009641.SHO']['askPrice']*1000
             data2['10009641.SHO']['askPrice']=round(data2['10009641.SHO']['askPrice']+0.0001,4)
-            etf1000_code=   {'Stock':'10009641.SHO','Price':data2['10009641.SHO']['askPrice']}  
+            etf1000_code=   {'Stock':'CN26F','Price':data2['10009641.SHO']['askPrice']}  
             print(current_time)
             print(ying_gua,data2['10009640.SHO']['bidPrice'],askPrice_gua)
             if (ying_gua < ying_jz+1.0 or ying_gua > ying_jz+2 or current_time > strategy_time + 60):
@@ -223,7 +300,7 @@ def init(C):
 
             ying2_gua=data2['10009641.SHO']['bidPrice']*1000 - bidPrice_gua
             data2['10009641.SHO']['bidPrice']=round(data2['10009641.SHO']['bidPrice']-0.0001,4)
-            etf1000_code=   {'Stock':'10009641.SHO','Price':data2['10009641.SHO']['bidPrice']}  
+            etf1000_code=   {'Stock':'CN26F','Price':data2['10009641.SHO']['bidPrice']}  
             print(current_time)
             print(ying2_gua,data2['10009640.SHO']['askPrice'],bidPrice_gua)
             if (ying2_gua < ying2_jz+1 or ying2_gua > ying2_jz+10 or current_time > strategy_time + 60):
@@ -255,7 +332,7 @@ def init(C):
 
                 order=passorder(3, 1101, account, '10009640.SHO', 11, askPrice_gua, 1,strategyName, 2, "b",C)
                 data2['10009641.SHO']['askPrice']=round(data2['10009641.SHO']['askPrice']+0.0001,4)
-                etf1000_code=   {'Stock':'10009641.SHO','Price':data2['10009641.SHO']['askPrice']}  
+                etf1000_code=   {'Stock':'CN26F','Price':data2['10009641.SHO']['askPrice']}  
 
                 a=1
                 redis_db.set('IH_lock', 1)
@@ -277,7 +354,7 @@ def init(C):
 
                 order=passorder(8, 1101, account, '10009640.SHO', 11, bidPrice_gua, 1,strategyName, 2, "b",C)
                 data2['10009641.SHO']['bidPrice']=round(data2['10009641.SHO']['bidPrice']-0.0001,4)
-                etf1000_code=   {'Stock':'10009641.SHO','Price':data2['10009641.SHO']['bidPrice']}  
+                etf1000_code=   {'Stock':'CN26F','Price':data2['10009641.SHO']['bidPrice']}  
 
                 a=1
                 redis_db.set('IH_lock', 1)
@@ -312,11 +389,14 @@ def init(C):
             print('has order')
             return
 
-            
+
     #C.stock_list = ["MO2410-C-4000.IF","512100.SH"] 10009641.SHO
-    C.stock_list = ["10009640.SHO","10009641.SHO"]
+    # 只订阅 10009640.SHO，CN26F 价格通过独立线程获取
+    C.stock_list = ["10009640.SHO"]
     for stock in C.stock_list:
-        data2[stock] = {}  
+        data2[stock] = {}
+    # 为 CN26F 数据预留空间（键名保持为 10009641.SHO 以最小化代码改动）
+    data2['10009641.SHO'] = {}
 #    C.stock_list = ["au00.SF","10009640.SHO"]
     C.subID = C.subscribe_whole_quote(C.stock_list,callback=call_back)
     print(C.subID)
