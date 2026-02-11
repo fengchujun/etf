@@ -252,13 +252,6 @@ def init(C):
 
             data2[stock]['bidVol']=data[stock]['bidVol'][0]
     #        data2[stock]['iopv']=data[stock]['askPrice'][0]-get_etf_iopv(stock)
-
-        # 10009640.SHO 价格加上 3020
-        if '10009640.SHO' in data2 and data2['10009640.SHO'] != {}:
-            data2['10009640.SHO']['askPrice'] += 3020
-            data2['10009640.SHO']['bidPrice'] += 3020
-            print(f"10009640.SHO价格+3020: 卖一={data2['10009640.SHO']['askPrice']}, 买一={data2['10009640.SHO']['bidPrice']}")
-
         if is_kong(data2): 
             return
             #pass
@@ -283,7 +276,7 @@ def init(C):
             
  
 
-            ying_gua=  askPrice_gua - data2['10009641.SHO']['askPrice']*1000
+            ying_gua=  askPrice_gua*1000 + 3020 - data2['10009641.SHO']['askPrice']
             data2['10009641.SHO']['askPrice']=round(data2['10009641.SHO']['askPrice']+0.0001,4)
             etf1000_code=   {'Stock':'CN26G','Price':data2['10009641.SHO']['askPrice']}  
             print(current_time)
@@ -306,7 +299,7 @@ def init(C):
             current_time = datetime.now().timestamp()
 
 
-            ying2_gua=data2['10009641.SHO']['bidPrice']*1000 - bidPrice_gua
+            ying2_gua=data2['10009641.SHO']['bidPrice'] - (bidPrice_gua*1000 + 3020)
             data2['10009641.SHO']['bidPrice']=round(data2['10009641.SHO']['bidPrice']-0.0001,4)
             etf1000_code=   {'Stock':'CN26G','Price':data2['10009641.SHO']['bidPrice']}  
             print(current_time)
@@ -327,8 +320,8 @@ def init(C):
 
 
 
-        ying= data2['10009640.SHO']['bidPrice'] - data2['10009641.SHO']['askPrice']*1000
-        print('ying',ying,data2['10009640.SHO']['bidPrice'], data2['10009641.SHO']['askPrice'])
+        ying= data2['10009640.SHO']['bidPrice']*1000 + 3020 - data2['10009641.SHO']['askPrice']
+        print('ying',ying,'10009640.bidPrice*1000+3020=',data2['10009640.SHO']['bidPrice']*1000+3020, 'CN26G/5=',data2['10009641.SHO']['askPrice'])
 
         
 
@@ -349,8 +342,8 @@ def init(C):
                 return
 
 
-        ying2= data2['10009641.SHO']['bidPrice']*1000 - data2['10009640.SHO']['askPrice']
-        print('ying2',ying2, data2['10009641.SHO']['bidPrice'],data2['10009640.SHO']['askPrice'])
+        ying2= data2['10009641.SHO']['bidPrice'] - (data2['10009640.SHO']['askPrice']*1000 + 3020)
+        print('ying2',ying2, 'CN26G/5=',data2['10009641.SHO']['bidPrice'],'10009640.askPrice*1000+3020=',data2['10009640.SHO']['askPrice']*1000+3020)
         
         if 1>2 and ying2>ying2_jz  and ying2<100000 and ying2>-100000 : 
 
