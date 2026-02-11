@@ -4,7 +4,8 @@ import redis
 import json
 import pandas as pd
 import sys
-from datetime import datetime,time
+from datetime import datetime
+from datetime import time as time_class
 import requests
 import threading
 
@@ -182,7 +183,7 @@ def init(C):
             print('IH_lock2')
             return
         current_time = datetime.now().time()
-        target_time = time(23, 55)
+        target_time = time_class(23, 55)
 
         #print(current_time)
         #print(target_time)
